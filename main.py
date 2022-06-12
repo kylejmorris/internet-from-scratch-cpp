@@ -4,26 +4,22 @@ from multiprocessing import Process
 
 def server():
     print("we in server")
-    """
     host = "client_ip"
     conn = Connection(host, 8000)
-    conn.Listen() # should be background process
-    data = conn.Recv()
+    conn.listen() # should be background process
+    data = conn.recv()
     return
-    """
 
 def client():
     print("we in client")
-    """
     host = "server_ip"
     conn = Connection(host, 8000)
-    success = conn.Open()
+    success = conn.open()
 
     if success:
-        conn.Send("yo")
+        conn.send("yo")
 
-    conn.Close()
-    """
+    conn.close()
 
 # interface:
 #- open, close, send, receive, status 
@@ -35,18 +31,41 @@ class Connection:
 
     def open(self):
         self.state = "START"
+        print("Connection.open(): trying to open connection with {0}".format(self.host))
+        time.sleep(3)
+        print("Connection.open(): established connection with {0}".format(self.host))
 
     def close(self):
         self.state = "CLOSED"
+        print("Connection.close(): closed connection with {0}".format(self.host))
+
+    def listen(self):
+        self.state = "LISTENING"
+        print("Connection.listen(): waiting for connection with {0}".format(self.host))
+        time.sleep(3)
+        # handshake serverside
+
+        print("Connection.listen(): received connection from {0}".format(self.host))
     
+    def __split(self, payload):
+        return [payload, 1, 2, 3]
+
     def send(self, payload):
+        print("Connection.send(): sending payload... {0}".format(self.host))
+
+        packets = self.__split(payload)
+
+        for packet in packets:
+            print("Connection.send(): sending packet... {0}".format(self.host))
+            time.sleep(1)
+
+        print("Connection.send(): sent payload... {0}".format(self.host))
         return
 
-    def receive(self):
+    def recv(self):
+        print("Connection.receive(): received payload from... {0}".format(self.host))
         return
 
-    def status(self):
-        return
         """
         global state
 
