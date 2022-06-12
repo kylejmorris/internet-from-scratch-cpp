@@ -2,6 +2,11 @@ from flask import Flask
 import time
 from multiprocessing import Process
 from enum import Enum
+from bitstring import BitArray
+
+a = BitArray('0b001')
+b = 1
+print(b << b)
 
 def server():
     print("we in server")
@@ -21,8 +26,28 @@ def client():
         conn.send("yo")
 
     conn.close()
+    return
 
 #class FileSocket
+class IPV6Packet:
+    def __init__(self, data, src_ip, dest_ip):
+        self.data = data
+
+        # header: 320 bits
+        self.src_ip = src_ip
+        self.dest_ip = dest_ip
+
+class TCPPacket:
+    # 1024 bit packet
+    def __init__(self, data, seq, ack):
+        self.data = data
+        self.seq = seq
+        self.ack = ack
+
+    def to_bits(self):
+        # init bitstring header
+        bin = 0b0*1024
+        return self.data
 
 class TCPConnection:
     class State (Enum):
@@ -46,25 +71,32 @@ class TCPConnection:
 
         return True 
    
-    def __check_for_syn_packet():
+    def __check_for_syn_packet(self):
         # looking for packet with seq == 0, ack == 0. Return None if we don't
         payload = "" # needs to be a bitstring
-        return None 
+        return payload
 
 
-    def __check_for_ack_packet():
+    def __check_for_ack_packet(self):
         # looking for packet with seq == 1, ack == 1. Return None if we don't
         payload = "" # needs to be a bitstring
-        return None 
+        return payload
 
-    def __check_for_synack_packet():
+    def __check_for_synack_packet(self):
         # looking for packet with seq == 0, ack == 1. Return None if we don't
         payload = "" # needs to be a bitstring
-        return None 
+        return payload
 
     def __send_ack_packet(self):
         # write output packet 
         print("Connection.__send_ack_packet(): sending ack packet to {0}".format(self.host))
+        payload = "" # write the tcp segment header with seq 1, ack 1
+
+        return True 
+
+    def __send_synack_packet(self):
+        # write output packet 
+        print("Connection.__send_ack_packet(): sending synack packet to {0}".format(self.host))
         payload = "" # write the tcp segment header with seq 1, ack 1
 
         return True 
@@ -160,48 +192,7 @@ class TCPConnection:
         # check we got all the data, if not throw error, otherwise close
         # TODO: scan packets to see if we have all the data
         # TODO: send close request / do closing handshake
-        return
-
-        """
-        global state
-
-        if state == "START":
-            # check local files for inbound payload
-            synFound = False
-            if synFound:
-                # broadcast synack
-                state = "WAIT_ACK"
-            return
-        if state == "WAIT_ACK":
-            # check local files for inbound ack payload
-            ackFound = False
-            if ackFound:
-                # nice! openly listen for packets
-                state = "RECEIVING"
-            return
-        if state == "RECEIVING":
-            # check for inbound payload
-            return
-
-        global state
-        # states
-        if state == "START":
-            # do start
-            # check local file for inbound payload
-            # if local payload, broadcast syn
-            return
-
-        if state == "WAIT_SYNACK":
-            # check local file for synack payload
-            # if local payload found, broadcast ack
-            state = "SENDING"
-            return
-
-        if state == "SENDING":
-            # sleep for a bit
-            # broadcast payload... 
-            return
-        """
+        return "payload"
 
 if __name__ == '__main__':
     s = Process(target=server, args=())
