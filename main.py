@@ -3,10 +3,11 @@ import time
 from multiprocessing import Process
 from enum import Enum
 from bitstring import BitArray
+import binascii
 
 a = BitArray('0b001')
-b = 1
-print(b << b)
+
+BITS_PER_BYTE = 8
 
 def server():
     print("we in server")
@@ -28,15 +29,6 @@ def client():
     conn.close()
     return
 
-#class FileSocket
-class IPV6Packet:
-    def __init__(self, data, src_ip, dest_ip):
-        self.data = data
-
-        # header: 320 bits
-        self.src_ip = src_ip
-        self.dest_ip = dest_ip
-
 class TCPPacket:
     # 1024 bit packet
     def __init__(self, data, seq, ack):
@@ -45,8 +37,52 @@ class TCPPacket:
         self.ack = ack
 
     def to_bits(self):
+        PACKET_SIZE = 65535
+        HEADER_SIZE = 192
+        DATA_SIZE = PACKET_SIZE - HEADER_SIZE
+        SEQ_OFFSET = 32
+        ACK_OFFSET = 64
+        DATA_OFFSET = 192
+
         # init bitstring header
-        bin = 0b0*1024
+        bits = BitArray(length=65535*BITS_PER_BYTE)
+
+        # TODO: ensure bit offset is correct. seq at bit 63, ack at bit 95
+        b_seq = BitArray(uint=self.seq, length=32)
+        b_ack = BitArray(uint=self.ack, length=32)
+
+        # TODO: this offset is off by like 11bits not sure why
+        bits.overwrite(BitArray(uint=self.seq, length=32), pos=SEQ_OFFSET)
+        bits.overwrite(BitArray(uint=self.ack, length=32), pos=ACK_OFFSET)
+
+        # data
+        b_data = bin(int.from_bytes(self.data.encode(), 'big'))
+        bits.overwrite(b_data,pos=DATA_OFFSET)
+
+        return bits
+
+def test_to_bits():
+    # ensure seq/ack are set
+    packet = TCPPacket(data="hello", seq=1, ack=1)
+    bits = packet.to_bits()
+    assert(bits[63]==1) # syn bit
+    assert(bits[95]==1) # ack bit
+    assert(bits[192]==1) # data begins here
+
+class IPV6Packet:
+    def __init__(self, tcp_packet=TCPPacket, src_ip=0, dest_ip=0):
+        self.tcp_packet = tcp_packet
+
+        # header: 320 bits
+        self.src_ip = src_ip
+        self.dest_ip = dest_ip
+
+    def to_bits(self):
+        # header
+        bits = "0101010100010..." # src_ip + dest_ip + ...
+
+        # data
+        bits = self.tcp_packet.to_bits()
         return self.data
 
 class TCPConnection:
@@ -68,6 +104,7 @@ class TCPConnection:
         # write output packet 
         print("Connection.__send_syn_packet(): sending syn packet to {0}".format(self.host))
         payload = "" # write the tcp segment header with seq 0, ack = 0
+        packet_tcp = TCPPacket(payload, seq=0, ack=0)
 
         return True 
    
