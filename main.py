@@ -30,6 +30,7 @@ def client():
     print("we in client")
     host = "server_ip"
     conn = TCPConnection(host, 8000)
+
     success = conn.open()
 
     if success:
@@ -174,6 +175,8 @@ class TCPConnection:
         # write to output file
         self.packetinterface.write_ip(ip_packet)
 
+        self.bits_sent = self.bits_sent + 1
+
         return True 
    
     def __check_for_syn_packet(self):
@@ -213,6 +216,7 @@ class TCPConnection:
 
         # write to output file
         self.packetinterface.write_ip(ip_packet)
+        self.bits_sent = self.bits_sent + 1
         return True 
 
     def __send_synack_packet(self):
@@ -223,22 +227,8 @@ class TCPConnection:
 
         # write to output file
         self.packetinterface.write_ip(ip_packet)
+        self.bits_sent = self.bits_sent + 1
  
-        return True 
-
-    def __send_data_packet(self, data):
-        # write output packet 
-        log("Connection.__send_data_packet(): sending data packet to {0}".format(self.host))
-        payload = "" # write the tcp segment header with seq=?, ack=?
-        bits_to_send = 1024
-
-        tcp_packet = TCPPacket(data, seq=self.bits_sent, ack=self.bits_received)
-        ip_packet = IPV6Packet(tcp_packet, src_ip=0, dest_ip=0)
-
-        # write to output file
-        self.packetinterface.write(ip_packet)
-
-        self.bits_sent += bits_to_send
         return True 
 
     def open(self):
@@ -290,18 +280,33 @@ class TCPConnection:
         print("Connection.listen(): received connection from {0}".format(self.host))
     
     def __split(self, payload):
-        return [payload, 1, 2, 3]
+        # split payload into bitarray chunks of size TCP_DATA_SIZE
+        # divising by 8 because python len calculation uses bytes not bits
+        chonks = [payload[i:i+int(TCP_DATA_SIZE/8)] for i in range(0, len(payload), int(TCP_DATA_SIZE/8))]
+
+        # create packets with increasing seq number
+        packets = []
+        for chonk in chonks:
+            t = TCPPacket(data=chonk, seq=self.bits_sent, ack=self.bits_received)
+            packet = IPV6Packet(tcp_packet=t, src_ip=0, dest_ip=0)
+            packets.append(packet)
+            self.bits_sent = self.bits_sent + len(chonk)
+
+        return packets
 
     def send(self, payload):
         log("Connection.send(): sending payload... {0}".format(self.host))
 
+        # convert payload into bitarray
+        bits = bin(int.from_bytes(payload.encode(), 'big'))
+
         # split payload into TCP packets with correct seq/ack numbers
-        packets = self.__split(payload)
+        packets = self.__split(bits)
 
         for packet in packets:
             log("Connection.send(): sending packet... {0}".format(self.host))
             time.sleep(1)
-            self.__send_data_packet(packet)
+            self.packetinterface.write_ip(packet)
 
         log("Connection.send(): sent payload... {0}".format(self.host))
         return
@@ -314,15 +319,6 @@ class TCPConnection:
         # TODO: scan packets to see if we have all the data
         # TODO: send close request / do closing handshake
         return "payload"
-
-"""
-p = TCPPacket(data="", seq=0, ack=1)
-ip = IPV6Packet(p, src_ip=0, dest_ip=0)
-rw = PacketReadWriter()
-rw.write_ip(ip)
-packets = rw.read_tcp()
-print(packets[0].ack)
-"""
 
 if __name__ == '__main__':
     s = Process(target=server, args=())
