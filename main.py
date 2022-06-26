@@ -7,7 +7,8 @@ import binascii
 
 a = BitArray('0b001')
 
-BITS_PER_BYTE = 8
+TCP_PACKET_SIZE = 65535 * 8
+IPV6_HEADER_SIZE = 320
 
 def server():
     print("we in server")
@@ -37,21 +38,18 @@ class TCPPacket:
         self.ack = ack
 
     def to_bits(self):
-        PACKET_SIZE = 65535
         HEADER_SIZE = 192
-        DATA_SIZE = PACKET_SIZE - HEADER_SIZE
+        DATA_SIZE = TCP_PACKET_SIZE - HEADER_SIZE
         SEQ_OFFSET = 32
         ACK_OFFSET = 64
         DATA_OFFSET = 192
 
         # init bitstring header
-        bits = BitArray(length=65535*BITS_PER_BYTE)
+        bits = BitArray(length=TCP_PACKET_SIZE)
 
-        # TODO: ensure bit offset is correct. seq at bit 63, ack at bit 95
         b_seq = BitArray(uint=self.seq, length=32)
         b_ack = BitArray(uint=self.ack, length=32)
 
-        # TODO: this offset is off by like 11bits not sure why
         bits.overwrite(BitArray(uint=self.seq, length=32), pos=SEQ_OFFSET)
         bits.overwrite(BitArray(uint=self.ack, length=32), pos=ACK_OFFSET)
 
@@ -60,14 +58,6 @@ class TCPPacket:
         bits.overwrite(b_data,pos=DATA_OFFSET)
 
         return bits
-
-def test_to_bits():
-    # ensure seq/ack are set
-    packet = TCPPacket(data="hello", seq=1, ack=1)
-    bits = packet.to_bits()
-    assert(bits[63]==1) # syn bit
-    assert(bits[95]==1) # ack bit
-    assert(bits[192]==1) # data begins here
 
 class IPV6Packet:
     def __init__(self, tcp_packet=TCPPacket, src_ip=0, dest_ip=0):
@@ -79,11 +69,28 @@ class IPV6Packet:
 
     def to_bits(self):
         # header
-        bits = "0101010100010..." # src_ip + dest_ip + ...
+        ip_bits = BitArray(length=TCP_PACKET_SIZE + IPV6_HEADER_SIZE)
 
         # data
-        bits = self.tcp_packet.to_bits()
-        return self.data
+        tcp_bits = self.tcp_packet.to_bits()
+        ip_bits.overwrite(tcp_bits, pos=IPV6_HEADER_SIZE)
+
+        return ip_bits
+
+def test_tcp_to_bits():
+    # ensure seq/ack are set
+    packet = TCPPacket(data="hello", seq=1, ack=1)
+    bits = packet.to_bits()
+    assert(bits[63]==1) # syn bit
+    assert(bits[95]==1) # ack bit
+    assert(bits[192]==1) # data begins here
+
+def test_ip_to_bits():
+    # ensure seq/ack are set
+    packet = TCPPacket(data="hello", seq=1, ack=1)
+    ip_packet = IPV6Packet(tcp_packet=packet, src_ip=0, dest_ip=0)
+    bits = ip_packet.to_bits()
+    assert(bits[320+32+31]==1) # syn bit
 
 class TCPConnection:
     class State (Enum):
@@ -103,9 +110,9 @@ class TCPConnection:
     def __send_syn_packet(self):
         # write output packet 
         print("Connection.__send_syn_packet(): sending syn packet to {0}".format(self.host))
-        payload = "" # write the tcp segment header with seq 0, ack = 0
-        packet_tcp = TCPPacket(payload, seq=0, ack=0)
-
+        packet_tcp = TCPPacket("", seq=0, ack=0)
+        ip_packet = IPV6Packet(packet_tcp, src_ip=0, dest_ip=0)
+        bits = ip_packet.to_bits()
         return True 
    
     def __check_for_syn_packet(self):
