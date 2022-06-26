@@ -35,6 +35,10 @@ def client():
 
     if success:
         conn.send("yo")
+        conn.send("hey!")
+        conn.send("ohhhhh")
+        conn.send("heyyyy")
+        conn.send("oh!")
 
     conn.close()
     return
@@ -147,9 +151,6 @@ def test_ip_to_bits():
     bits = ip_packet.to_bits()
     assert(bits[320+32+31]==1) # syn bit
 
-test_ip_to_bits()
-test_tcp_to_bits()
-
 class TCPConnection:
     class State (Enum):
         CLOSED = 0
@@ -169,7 +170,7 @@ class TCPConnection:
     def __send_syn_packet(self):
         # write output packet 
         log("Connection.__send_syn_packet(): sending syn packet to {0}".format(self.host))
-        packet_tcp = TCPPacket("", seq=0, ack=0)
+        packet_tcp = TCPPacket("", seq=self.bits_sent, ack=self.bits_received)
         ip_packet = IPV6Packet(packet_tcp, src_ip=0, dest_ip=0)
 
         # write to output file
@@ -184,6 +185,7 @@ class TCPConnection:
         packets = self.packetinterface.read_tcp()
         for packet in packets:
             if packet.seq == 0 and packet.ack == 0:
+                self.bits_received = self.bits_received + 1
                 return True
         
         return False
@@ -194,6 +196,7 @@ class TCPConnection:
         packets = self.packetinterface.read_tcp()
         for packet in packets:
             if packet.seq == 1 and packet.ack == 1:
+                self.bits_received = self.bits_received + 1
                 return True
  
         return False
@@ -203,6 +206,7 @@ class TCPConnection:
         packets = self.packetinterface.read_tcp()
         for packet in packets:
             if packet.seq == 0 and packet.ack == 1:
+                self.bits_received = self.bits_received + 1
                 return True
         
         return False
@@ -211,7 +215,7 @@ class TCPConnection:
         # TODO impl
         # write output packet 
         log("Connection.__send_ack_packet(): sending ack packet to {0}".format(self.host))
-        tcp_packet = TCPPacket("", seq=1, ack=1)
+        tcp_packet = TCPPacket("", seq=self.bits_sent, ack=self.bits_received)
         ip_packet = IPV6Packet(tcp_packet, src_ip=0, dest_ip=0)
 
         # write to output file
@@ -222,7 +226,7 @@ class TCPConnection:
     def __send_synack_packet(self):
         # write output packet 
         log("Connection.__send_synack_packet(): sending synack packet to {0}".format(self.host))
-        tcp_packet = TCPPacket("", seq=0, ack=1)
+        tcp_packet = TCPPacket("", seq=self.bits_sent, ack=self.bits_received)
         ip_packet = IPV6Packet(tcp_packet, src_ip=0, dest_ip=0)
 
         # write to output file
@@ -249,6 +253,7 @@ class TCPConnection:
         self.state = self.State.ESTABLISHED
         time.sleep(3)
         print("Connection.open(): established connection with {0}".format(self.host))
+        return True
 
     def close(self):
         self.state = self.state.CLOSED
@@ -290,7 +295,7 @@ class TCPConnection:
             t = TCPPacket(data=chonk, seq=self.bits_sent, ack=self.bits_received)
             packet = IPV6Packet(tcp_packet=t, src_ip=0, dest_ip=0)
             packets.append(packet)
-            self.bits_sent = self.bits_sent + len(chonk)
+            self.bits_sent = self.bits_sent + len(chonk)*8
 
         return packets
 
@@ -314,11 +319,18 @@ class TCPConnection:
     def recv(self):
         log("Connection.receive(): received payload from... {0}".format(self.host))
 
-        # simplification: assume when we get FIN bit we're done.
-        # check we got all the data, if not throw error, otherwise close
-        # TODO: scan packets to see if we have all the data
-        # TODO: send close request / do closing handshake
-        return "payload"
+        packets = self.packetinterface.read_tcp()
+
+        gotFin = False
+
+        while not gotFin:
+            log("listening..")
+            # find next packet to print out 
+            for packet in packets:
+                if packet.seq == self.bits_received:
+                    log("received packet... {0}".format(packet.seq))
+                    self.bits_received = self.bits_received + len(packet.data)
+            time.sleep(1)
 
 if __name__ == '__main__':
     s = Process(target=server, args=())
