@@ -8,7 +8,10 @@ import binascii
 a = BitArray('0b001')
 
 TCP_PACKET_SIZE = 65535 * 8
+TCP_HEADER_SIZE = 192
+TCP_DATA_SIZE = TCP_PACKET_SIZE - TCP_HEADER_SIZE
 IPV6_HEADER_SIZE = 320
+PACKET_PATH = "/dev/proc/shared/net/tcp6"
 
 def server():
     print("we in server")
@@ -30,19 +33,44 @@ def client():
     conn.close()
     return
 
+class TCPPacketReadWriter:
+    # read n write packets
+
+    def write(self, packet):
+        # add new IPPacket to filesystem
+        bits = packet.to_bits()
+        now_ns = time.time_ns()
+        print( now_ns )
+
+        f = open("{0}/{1}".format(PACKET_PATH,now_ns), "w")
+        f.close()
+
+        return
+    
+    def read(self):
+        # return list of TCPPacket
+        import os
+        files = os.listdir(PACKET_PATH)
+        packets = []
+        for file in files:
+            if os.path.isfile(os.path.join(PACKET_PATH, file)):
+                f = open(os.path.join(PACKET_PATH, file),'r')
+                bits = f.read()
+
+                f.close()
+        return 
+
 class TCPPacket:
     # 1024 bit packet
     def __init__(self, data, seq, ack):
         self.data = data
         self.seq = seq
         self.ack = ack
-
+        self.SEQ_OFFSET = 32
+        self.ACK_OFFSET = 64
+        self.DATA_OFFSET = 192
+ 
     def to_bits(self):
-        HEADER_SIZE = 192
-        DATA_SIZE = TCP_PACKET_SIZE - HEADER_SIZE
-        SEQ_OFFSET = 32
-        ACK_OFFSET = 64
-        DATA_OFFSET = 192
 
         # init bitstring header
         bits = BitArray(length=TCP_PACKET_SIZE)
@@ -50,20 +78,34 @@ class TCPPacket:
         b_seq = BitArray(uint=self.seq, length=32)
         b_ack = BitArray(uint=self.ack, length=32)
 
-        bits.overwrite(BitArray(uint=self.seq, length=32), pos=SEQ_OFFSET)
-        bits.overwrite(BitArray(uint=self.ack, length=32), pos=ACK_OFFSET)
+        bits.overwrite(BitArray(uint=self.seq, length=32), pos=self.SEQ_OFFSET)
+        bits.overwrite(BitArray(uint=self.ack, length=32), pos=self.ACK_OFFSET)
 
         # data
         b_data = bin(int.from_bytes(self.data.encode(), 'big'))
-        bits.overwrite(b_data,pos=DATA_OFFSET)
+        bits.overwrite(b_data,pos=self.DATA_OFFSET)
 
         return bits
+
+    def from_bits(self, bits):
+        SEQ_OFFSET = IPV6_HEADER_SIZE + TCP_HEADER_SIZE + self.SEQ_OFFSET
+        ACK_OFFSET = IPV6_HEADER_SIZE + TCP_HEADER_SIZE + self.ACK_OFFSET
+        DATA_OFFSET = IPV6_HEADER_SIZE + TCP_HEADER_SIZE + self.DATA_OFFSET
+
+        # init bitstring header
+        b_seq = bits[SEQ_OFFSET:SEQ_OFFSET+32]
+        b_ack = bits[ACK_OFFSET:ACK_OFFSET+32]
+
+        self.seq = int(b_seq)
+        self.ack = int(b_ack)
+
+        # data
+        self.data = bits[DATA_OFFSET:DATA_OFFSET+TCP_DATA_SIZE]
 
 class IPV6Packet:
     def __init__(self, tcp_packet=TCPPacket, src_ip=0, dest_ip=0):
         self.tcp_packet = tcp_packet
 
-        # header: 320 bits
         self.src_ip = src_ip
         self.dest_ip = dest_ip
 
@@ -92,6 +134,9 @@ def test_ip_to_bits():
     bits = ip_packet.to_bits()
     assert(bits[320+32+31]==1) # syn bit
 
+test_ip_to_bits()
+test_tcp_to_bits()
+
 class TCPConnection:
     class State (Enum):
         CLOSED = 0
@@ -106,6 +151,7 @@ class TCPConnection:
         self.state = self.State.CLOSED
         self.bits_sent = 0
         self.bits_received = 0
+        self.packetinterface = TCPPacketReadWriter()
 
     def __send_syn_packet(self):
         # write output packet 
@@ -113,47 +159,77 @@ class TCPConnection:
         packet_tcp = TCPPacket("", seq=0, ack=0)
         ip_packet = IPV6Packet(packet_tcp, src_ip=0, dest_ip=0)
         bits = ip_packet.to_bits()
+
+        # write to output file
+        self.packetinterface.write(bits)
+
         return True 
    
     def __check_for_syn_packet(self):
         # looking for packet with seq == 0, ack == 0. Return None if we don't
-        payload = "" # needs to be a bitstring
-        return payload
+        packets = self.packetinterface.read()
+        for packet in packets:
+            if packet.seq == 0 and packet.ack == 0:
+                return True
+        
+        return False
 
 
     def __check_for_ack_packet(self):
         # looking for packet with seq == 1, ack == 1. Return None if we don't
-        payload = "" # needs to be a bitstring
-        return payload
+        packets = self.packetinterface.read()
+        for packet in packets:
+            if packet.seq == 1 and packet.ack == 1:
+                return True
+ 
+        return False
 
     def __check_for_synack_packet(self):
         # looking for packet with seq == 0, ack == 1. Return None if we don't
-        payload = "" # needs to be a bitstring
-        return payload
+        packets = self.packetinterface.read()
+        for packet in packets:
+            if packet.seq == 0 and packet.ack == 1:
+                return True
+        
+        return False
 
     def __send_ack_packet(self):
+        # TODO impl
         # write output packet 
         print("Connection.__send_ack_packet(): sending ack packet to {0}".format(self.host))
-        payload = "" # write the tcp segment header with seq 1, ack 1
+        packet_tcp = TCPPacket("", seq=1, ack=1)
+        ip_packet = IPV6Packet(packet_tcp, src_ip=0, dest_ip=0)
+        bits = ip_packet.to_bits()
 
+        # write to output file
+        self.packetinterface.write(bits)
         return True 
 
     def __send_synack_packet(self):
         # write output packet 
         print("Connection.__send_ack_packet(): sending synack packet to {0}".format(self.host))
-        payload = "" # write the tcp segment header with seq 1, ack 1
+        packet_tcp = TCPPacket("", seq=0, ack=1)
+        ip_packet = IPV6Packet(packet_tcp, src_ip=0, dest_ip=0)
+        bits = ip_packet.to_bits()
 
+        # write to output file
+        self.packetinterface.write(bits)
+ 
         return True 
 
-    def __send_data_packet(self):
+    def __send_data_packet(self, data):
         # write output packet 
         print("Connection.__send_data_packet(): sending data packet to {0}".format(self.host))
         payload = "" # write the tcp segment header with seq=?, ack=?
-        
         bits_to_send = 1024
 
+        packet_tcp = TCPPacket(data, seq=self.bits_sent, ack=self.bits_received)
+        ip_packet = IPV6Packet(packet_tcp, src_ip=0, dest_ip=0)
+        bits = ip_packet.to_bits()
+
         # write to output file
-        # increment bits sent by datasize of packet
+        self.packetinterface.write(bits)
+
         self.bits_sent += bits_to_send
         return True 
 
@@ -167,10 +243,7 @@ class TCPConnection:
         gotSynAck = False
         while not gotSynAck:
             # check local file for synack payload in /dev/proc/PID/
-            payload = self.__check_for_synack_packet()
-            if payload is not None:
-                getSynAck = True
-
+            getSynAck = self.__check_for_synack_packet()
             time.sleep(1)
 
         self.__send_ack_packet()
@@ -190,9 +263,7 @@ class TCPConnection:
         gotSyn = False
         while not gotSyn:
             # check local file for synack payload in /dev/proc/PID/
-            payload = self.__check_for_syn_packet()
-            if payload is not None:
-                gotSyn = True
+            gotSyn = self.__check_for_syn_packet()
             time.sleep(1)
 
         self.state = self.State.SYNRECEIVED
@@ -203,9 +274,7 @@ class TCPConnection:
         gotAck = False
         while not gotAck:
             # check local file for synack payload in /dev/proc/PID/
-            payload = self.__check_for_ack_packet()
-            if payload is not None:
-                gotAck = True
+            gotAck = self.__check_for_ack_packet()
             time.sleep(1)
         
         self.state = self.State.ESTABLISHED
