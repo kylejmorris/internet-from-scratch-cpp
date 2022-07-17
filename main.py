@@ -332,6 +332,17 @@ class TCPConnection:
                     self.bits_received = self.bits_received + len(packet.data)
             time.sleep(1)
 
+class WifiDriver:
+    def listen():
+        # listen for packet data... IRL over radio
+        # save packets on filesystem
+        return 
+
+    def broadcast(self):
+        # scan file system for packets
+        # broadcast a packet to the world over radio
+        # delete packet from filesystem
+
 if __name__ == '__main__':
     s = Process(target=server, args=())
     c = Process(target=client, args=())
